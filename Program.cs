@@ -10,7 +10,25 @@ namespace FlipnicBinExtractor
         {
             Console.WriteLine("Flipnic Game Data Extractor 0.0");
             string me = System.AppDomain.CurrentDomain.FriendlyName;
-            if (args.Length == 0)
+
+            if (string.Join("", args).Contains("/?"))
+            {
+                string help = "Help" +
+                    "\n" +
+                    string.Format("\nUsage: {0} [command] [source] [destination]", me) +
+                    "\n" +
+                    "\ncommand     - Use the /e switch for extracting, /c switch for repacking" +
+                    "\nsource      - The source file. If extracting, this must be a .BIN file. If you're repacking, make sure this points to a folder" +
+                    "\ndestination - The destination folder (when extracting) or file (when repacking)" +
+                    "\n" +
+                    "\nExamples:" +
+                    "\n\n" +
+                    string.Format("\n{0} /e STR.BIN STR", me) +
+                    string.Format("\n{0} /c TUTO TUTO.BIN", me) + "\n";
+                Console.Write(help);
+                return 0;
+            }
+            else if (args.Length == 0)
             {
                 Console.WriteLine(string.Format("No command specified. To see all available commands, type \"{0} /?\".", me));
                 return 4;
@@ -27,24 +45,7 @@ namespace FlipnicBinExtractor
             }
             else
             {
-                if (string.Join("", args).Contains("/?"))
-                {
-                    string help = "Help" +
-                        "\n" +
-                        string.Format("\nUsage: {0} [command] [source] [destination]", me) +
-                        "\n" +
-                        "\ncommand     - Use the /e switch for extracting, /c switch for repacking" +
-                        "\nsource      - The source file. If extracting, this must be a .BIN file. If you're repacking, make sure this points to a folder" +
-                        "\ndestination - The destination folder (when extracting) or file (when repacking)" +
-                        "\n" +
-                        "\nExamples:" +
-                        "\n\n" +
-                        string.Format("\n{0} /e STR.BIN STR", me) +
-                        string.Format("\n{0} /c TUTO TUTO.BIN", me) + "\n";
-                    Console.Write(help);
-                    return 0;
-                }
-                else if (args[0] == "/e")
+                if (args[0] == "/e")
                 {
                     switch (ExtractBin(args[1], args[2]))
                     {
