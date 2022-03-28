@@ -266,12 +266,12 @@ namespace FlipnicBinExtractor
                                 {
                                     if (nextisfinish)
                                     {
-                                        finish = kvp.Value;
+                                        finish = kvp.Value - 1;
                                         foreach (KeyValuePair<string, long> subfldr in subfolders)
                                         {
                                             if ((subfldr.Value < finish) && (subfldr.Value > loc))
                                             {
-                                                finish = subfldr.Value;
+                                                finish = subfldr.Value - 1;
                                                 break;
                                             }
                                         }
@@ -279,7 +279,7 @@ namespace FlipnicBinExtractor
                                         {
                                             if ((kvp2.Value < finish) && (kvp2.Value > loc))
                                             {
-                                                finish = kvp2.Value;
+                                                finish = kvp2.Value - 1;
                                                 break;
                                             }
                                         }
