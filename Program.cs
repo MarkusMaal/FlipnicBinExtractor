@@ -75,7 +75,7 @@ namespace FlipnicBinExtractor
         {
             if (Directory.Exists(destination))
             {
-                Console.Write("Specified folder already exists. Overwrite? [Y/N]");
+                Console.Write("Specified folder already exists. Overwrite? [Y/N] ");
                 ConsoleKey result = Console.ReadKey().Key;
                 while (!((result == ConsoleKey.Y) || (result == ConsoleKey.N)))
                 {
@@ -83,11 +83,11 @@ namespace FlipnicBinExtractor
                 }
                 if (result == ConsoleKey.Y)
                 {
-                    Console.Write(" Y\n");
+                    Console.Write("\n");
 
                 } else if (result == ConsoleKey.N)
                 {
-                    Console.Write(" N\n");
+                    Console.Write("\n");
                     return 1;
                 }
             }
