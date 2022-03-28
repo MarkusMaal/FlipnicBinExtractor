@@ -16,6 +16,6 @@ This tool allows you to extract data from .BIN files using a properietary format
 * To extract data, use the following syntax: FlipnicBinExtractor /e [source] [destination]
 * Repacking is not available in this version (but is still in development)
 ## Examples
-* 'FlipnicBinExtractor /e RES.BIN Extracted'
-* 'FlipnicBinExtractor /e FONT.BIN FONT'
-* 'FlipnicBinExtractor /r FONT FONT.BIN' (not available in current version)
+* `FlipnicBinExtractor /e RES.BIN Extracted`
+* `FlipnicBinExtractor /e FONT.BIN FONT`
+* `FlipnicBinExtractor /r FONT FONT.BIN` (not available in current version)
