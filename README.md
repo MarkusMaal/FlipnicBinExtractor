@@ -1,5 +1,5 @@
 ﻿# Flipnic Game Data Extractor
-This tool allows you to extract data from .BIN files using a properietary format. Despite being proprietary, the TOC format is not too difficult to understand.<br/>
+This tool allows you to extract data from .BIN files using a properietary format. Despite being proprietary, the TOC format is not too difficult to understand.<br/><br/>
 ![image](https://user-images.githubusercontent.com/45605071/160381952-011b5c21-e050-474c-9942-36308ad89d3e.png)
 ## TOC explained
 * TOC is divided into 64 byte chunks, each chunk begins with the filename (up to 60 characters) and ends with 4 pointer bytes.
