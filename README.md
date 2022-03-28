@@ -3,7 +3,7 @@ This tool allows you to extract data from .BIN files using a properietary format
 ![image](https://user-images.githubusercontent.com/45605071/160381952-011b5c21-e050-474c-9942-36308ad89d3e.png)
 ## TOC explained
 * TOC is divided into 64 byte chunks, each chunk begins with the filename (up to 60 characters) and ends with 4 pointer bytes.
-* Each pointer is adressed by 2048 bytes (0x800).
+* Each pointer is addressed by 2048 bytes (0x800).
 * The first file in TOC is always "*Top Of CD Data", which identifies the beginning of the data stream.
 * The last file is always "*End Of CD Data", which is the end offset of the .BIN file.
 * Folders are identified by "\\" at the end of the filename
