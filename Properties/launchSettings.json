@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FlipnicBinExtractor": {
+      "commandName": "Project",
+      "commandLineArgs": "/e \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\ORIGINAL\\RES.BIN\" Extracted"
+    }
+  }
+}
