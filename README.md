@@ -13,9 +13,9 @@ This tool allows you to extract data from .BIN files using a properietary format
 * Each pointer is addressed by 1 byte (0x1), but to get the actual location you need to add the folder offset to the pointer value
 * Same filenames are allowed
 ## Command line usage
-* To extract data, use the following syntax: FlipnicBinExtractor /e [source] [destination]
+* To extract data, use the following syntax: `FlipnicBinExtractor /e [source] [destination]`
 * Repacking is not available in this version (but is still in development)
 ## Examples
 * `FlipnicBinExtractor /e RES.BIN Extracted`
 * `FlipnicBinExtractor /e FONT.BIN FONT`
-* `FlipnicBinExtractor /r FONT FONT.BIN` (not available in current version)
+* `FlipnicBinExtractor /c FONT FONT.BIN` (not available in current version)
