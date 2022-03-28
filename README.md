@@ -6,7 +6,7 @@ This tool allows you to extract data from .BIN files using a properietary format
 * Each pointer is adressed by 2048 bytes (0x800).
 * The first file in TOC is always "*Top Of CD Data", which identifies the beginning of the data stream.
 * The last file is always "*End Of CD Data", which is the end offset of the .BIN file.
-* Folders are identified by "\" at the end of the filename
+* Folders are identified by "\\" at the end of the filename
 * Folders cannot contain subfolders
 * Each folder also has the same 64-byte chunk structure, but there is no first file identifying the start of data stream
 * The last file in every folder is "*End Of Mem Data", identifying the end offset of the folder
