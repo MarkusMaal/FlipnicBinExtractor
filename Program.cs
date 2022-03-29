@@ -6,11 +6,15 @@ namespace FlipnicBinExtractor
 {
     class Program
     {
+        // Root function
         static int Main(string[] args)
         {
+            // Print title
             Console.WriteLine("Flipnic Game Data Extractor And Repacker");
+            // Get the executable name of this program
             string me = AppDomain.CurrentDomain.FriendlyName;
 
+            // Quick help function
             if (string.Join("", args).Contains("/?"))
             {
                 string help = "Help" +
@@ -33,6 +37,7 @@ namespace FlipnicBinExtractor
                 Console.Write(help);
                 return 0;
             }
+            // Simple error handling
             else if (args.Length == 0)
             {
                 Console.WriteLine(string.Format("No command specified. To see all available commands, type \"{0} /?\".", me));
@@ -50,6 +55,7 @@ namespace FlipnicBinExtractor
             }
             else
             {
+                // Parse first argument
                 switch (args[0].ToLower())
                 {
                     case "/e":
@@ -112,11 +118,266 @@ namespace FlipnicBinExtractor
             }
         }
 
+        // Full repack function
+        // If you use folder packs, delete all files which you do not want to get
+        // aliased by this function (a.k.a. all of the small files)
         static int RepackBin(string source, string destination)
         {
+            if (File.Exists(destination))
+            {
+                Console.Write("Specified file already exists. Overwrite? [Y/N] ");
+                ConsoleKey result = Console.ReadKey().Key;
+
+                while (!((result == ConsoleKey.Y) || (result == ConsoleKey.N)))
+                {
+                    result = Console.ReadKey().Key;
+                }
+                Console.Write("\n");
+                switch (result)
+                {
+                    case ConsoleKey.Y:
+                        File.Delete(destination);
+                        break;
+                    case ConsoleKey.N:
+                        return 1;
+                }
+            }
+            Console.WriteLine("Analyzing files...");
+
+            // To generate folder packs, use the /f switch (see CreateFolder function)
+            Dictionary<string, long> folderpacks = new Dictionary<string, long>();
+
+            // Aliases are files, which exist in subfolders, but aren't part of a
+            // folder pack. The advantage is that these files are both faster to
+            // write and faster to read by the game (reducing load times). The
+            // disadvantage to being stored directly in root TOC is less efficient
+            // space usage for smaller files (which is why folder packs exist).
+            Dictionary<string, long> aliases = new Dictionary<string, long>();
+
+            // Actual files, which exist in the root directory
+            Dictionary<string, long> files = new Dictionary<string, long>();
+
+            // Set cluster size. Do not change this, unless you know exactly what
+            // you're doing! 2048 is the one that works and is strongly recommended!
+            int clst = 2048;
+
+            // variable for storing end of file byte
+            long eof = 0;
+
+            // variable for storing end of TOC data
+            long eotoc = 64;
+
+            // Gather information about filenames and sizes
+            foreach (FileInfo fi in new DirectoryInfo(source).EnumerateFiles())
+            {
+                files[fi.Name.ToUpper()] = SetSizeOnBin(fi.Length, clst);
+                eotoc += 64;
+                eof += SetSizeOnBin(fi.Length, clst);
+            }
+
+            // Gather information about file aliases and folder packs
+            // Store their sizes
+            foreach (DirectoryInfo di in new DirectoryInfo(source).EnumerateDirectories())
+            {
+                foreach (FileInfo fi in new DirectoryInfo(di.FullName).EnumerateFiles())
+                {
+                    if (fi.Name == "A")
+                    {
+                        folderpacks[di.Name.ToUpper() + "\\"] = SetSizeOnBin(fi.Length, clst);
+                        eotoc += 64;
+                        eof += SetSizeOnBin(fi.Length, clst);
+                    } else
+                    {
+                        aliases[di.Name.ToUpper() + "\\" + fi.Name.ToUpper()] = SetSizeOnBin(fi.Length, clst);
+                        eotoc += 64;
+                        eof += SetSizeOnBin(fi.Length, clst);
+                    }
+                }
+            }
+            eotoc += 64;
+            // add TOC size to calculate the actual end of file
+            eof += eotoc;
+            Console.WriteLine(string.Format("Ready to write {0} of data", UserFriendlyFileSize(eof)));
+
+            // TOC constructor
+            // Write speed 64 bytes per cycle (makes code easier to write)
+            Console.WriteLine("Constructing TOC...");
+
+            Encoding ascii = Encoding.ASCII;
+            eotoc = SetSizeOnBin(eotoc, clst);
+            // TOC header
+            using (var stream = new FileStream(destination, FileMode.Append))
+            {
+                byte[] buffer = new byte[64];
+                List<byte> bytes = new List<byte>();
+                string filename = "*Top Of CD Data";
+                bytes.AddRange(ascii.GetBytes(filename));
+                for (int i = 0; i < 60 - filename.Length; i++)
+                {
+                    bytes.Add(0x00);
+                }
+                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(eotoc / 2048.0, 0)));
+                buffer = bytes.ToArray();
+                stream.Write(buffer, 0, buffer.Length);
+            }
+
+            long offset = eotoc;
+            // File system
+
+            // Folders and aliases
+            foreach (KeyValuePair<string, long> kvp in folderpacks)
+            {
+                byte[] buffer = new byte[64];
+                List<byte> bytes = new List<byte>();
+                string filename = kvp.Key;
+                bytes.AddRange(ascii.GetBytes(filename));
+                for (int i = 0; i < 60 - filename.Length; i++)
+                {
+                    bytes.Add(0x00);
+                }
+                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(offset / 2048.0, 0)));
+                AppendData(bytes.ToArray(), destination);
+                offset += kvp.Value;
+                foreach (KeyValuePair<string, long> skvp in aliases)
+                {
+                    if (skvp.Key.StartsWith(kvp.Key))
+                    {
+                        buffer = new byte[64];
+                        bytes.Clear();
+                        filename = skvp.Key;
+                        bytes.AddRange(ascii.GetBytes(filename));
+                        for (int i = 0; i < 60 - filename.Length; i++)
+                        {
+                            bytes.Add(0x00);
+                        }
+                        bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(offset / 2048.0, 0)));
+                        AppendData(bytes.ToArray(), destination);
+                        offset += skvp.Value;
+                    }
+                }
+            }
+
+            // Files
+            foreach (KeyValuePair<string, long> kvp in files)
+            {
+                byte[] buffer = new byte[64];
+                List<byte> bytes = new List<byte>();
+                string filename = kvp.Key;
+                bytes.AddRange(ascii.GetBytes(filename));
+                for (int i = 0; i < 60 - filename.Length; i++)
+                {
+                    bytes.Add(0x00);
+                }
+                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(offset / 2048.0, 0)));
+                AppendData(bytes.ToArray(), destination);
+                offset += kvp.Value;
+            }
+
+            // TOC footer
+            using (var stream = new FileStream(destination, FileMode.Append))
+            {
+                byte[] buffer = new byte[64];
+                List<byte> bytes = new List<byte>();
+                string filename = "*End Of CD Data";
+                bytes.AddRange(ascii.GetBytes(filename));
+                for (int i = 0; i < 60 - filename.Length; i++)
+                {
+                    bytes.Add(0x00);
+                }
+                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(eof / 2048.0, 0)));;
+                buffer = bytes.ToArray();
+                stream.Write(buffer, 0, buffer.Length);
+            }
+            Console.WriteLine("TOC written!");
+            List<byte> nulls = new List<byte>();
+            offset = new FileInfo(destination).Length;
+            int pad = 0;
+            while ((offset % clst > 0) || (offset < clst))
+            {
+                pad += 1;
+                offset += 1;
+            }
+            if (pad > 0)
+            {
+                Console.WriteLine(string.Format("Appending {0} null bytes...", pad));
+            }
+            AppendData(new byte[pad], destination);
+            Console.WriteLine("Writing subfolders...");
+            foreach (KeyValuePair<string, long> kvp in folderpacks)
+            {
+                Console.WriteLine(string.Format("\tWriting folder {0} ({1})", kvp.Key, UserFriendlyFileSize(kvp.Value)));
+                using (Stream src = File.OpenRead(source + "\\" + kvp.Key + "\\A"))
+                {
+                    byte[] buffer = new byte[2048];
+                    while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        AppendData(buffer, destination);
+                    }
+                }
+                foreach (KeyValuePair<string, long> skvp in aliases)
+                {
+                    if (skvp.Key.StartsWith(kvp.Key))
+                    {
+                        Console.WriteLine(string.Format("\tWriting alias {0} ({1})", skvp.Key, UserFriendlyFileSize(skvp.Value)));
+                        using (Stream src = File.OpenRead(source + "\\" + skvp.Value))
+                        {
+                            byte[] buffer = new byte[2048];
+                            while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                            {
+                                AppendData(buffer, destination);
+                            }
+                        }
+                    }
+                }
+            }
+            foreach (KeyValuePair<string, long> kvp in files)
+            {
+                Console.WriteLine(string.Format("\tWriting file {0} ({1})", kvp.Key, UserFriendlyFileSize(kvp.Value)));
+                using (Stream src = File.OpenRead(source + "\\" + kvp.Key))
+                {
+                    byte[] buffer = new byte[2048];
+                    while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        AppendData(buffer, destination);
+                    }
+                }
+            }
+            Console.WriteLine("Done!");
             return 0;
+
         }
 
+        static double RoundUp(double number, int decimalPlaces)
+        {
+            return Math.Ceiling(number * Math.Pow(10, decimalPlaces)) / Math.Pow(10, decimalPlaces);
+        }
+
+        static void AppendData(byte[] bytes, string destination)
+        {
+            using (var stream = new FileStream(destination, FileMode.Append))
+            {
+                stream.Write(bytes, 0, bytes.Length);
+            }
+        }
+
+        static string UserFriendlyFileSize(long bytes)
+        {
+            if (bytes > Math.Pow(2, 30)) { return string.Format("{0} GiB", Math.Round(bytes / Math.Pow(2, 30), 2)); }
+            else if (bytes > Math.Pow(2, 20)) { return string.Format("{0} MiB", Math.Round(bytes / Math.Pow(2, 20), 2)); }
+            else if (bytes > Math.Pow(2, 10)) { return string.Format("{0} kiB", Math.Round(bytes / 1024.0, 2)); }
+            else { return string.Format("{0} bytes", bytes); }
+        }
+
+        // This converts file sizes to align with cluster sizes.
+        // Cluster size defines the minimum possible file size
+        // and the number of bytes, which the memory in TOC is
+        // addressed by. Taken from a MSDN social forums post.
+        static long SetSizeOnBin(long length, int cluster)
+        {
+            return cluster * ((length + cluster - 1) / cluster);
+        }
+
+        // Create folder pack function
         static int CreateFolder(string source, string destination)
         {
             if (File.Exists(destination))
