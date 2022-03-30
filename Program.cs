@@ -319,7 +319,7 @@ namespace FlipnicBinExtractor
                     if (skvp.Key.StartsWith(kvp.Key))
                     {
                         Console.WriteLine(string.Format("\tWriting alias {0} ({1})", skvp.Key, UserFriendlyFileSize(skvp.Value)));
-                        using (Stream src = File.OpenRead(source + "\\" + skvp.Value))
+                        using (Stream src = File.OpenRead(source + "\\" + skvp.Key))
                         {
                             byte[] buffer = new byte[2048];
                             while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
@@ -362,9 +362,9 @@ namespace FlipnicBinExtractor
 
         static string UserFriendlyFileSize(long bytes)
         {
-            if (bytes > Math.Pow(2, 30)) { return string.Format("{0} GiB", Math.Round(bytes / Math.Pow(2, 30), 2)); }
-            else if (bytes > Math.Pow(2, 20)) { return string.Format("{0} MiB", Math.Round(bytes / Math.Pow(2, 20), 2)); }
-            else if (bytes > Math.Pow(2, 10)) { return string.Format("{0} kiB", Math.Round(bytes / 1024.0, 2)); }
+            if (bytes >= Math.Pow(2, 30)) { return string.Format("{0} GiB", Math.Round(bytes / Math.Pow(2, 30), 2)); }
+            else if (bytes >= Math.Pow(2, 20)) { return string.Format("{0} MiB", Math.Round(bytes / Math.Pow(2, 20), 2)); }
+            else if (bytes >= Math.Pow(2, 10)) { return string.Format("{0} kiB", Math.Round(bytes / 1024.0, 2)); }
             else { return string.Format("{0} bytes", bytes); }
         }
 
@@ -460,24 +460,124 @@ namespace FlipnicBinExtractor
             Console.WriteLine("End of TOC, begin writing data...");
             foreach (KeyValuePair<string, long> file in fs_entries)
             {
-                Console.WriteLine(string.Format("\tWriting {0}... ({1} KiB)", file.Key, file.Value / 1024));
+                Console.WriteLine(string.Format("\tWriting {0}... ({1})", file.Key, UserFriendlyFileSize(eof)));
                 using (Stream src = File.OpenRead(source + "\\" + file.Key))
                 {
-                    byte[] buffer = new byte[1];
+                    byte[] buffer = new byte[2048];
                     int offset = 0;
                     while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                     {
                         using (var stream = new FileStream(destination, FileMode.Append))
                         {
-                            stream.Write(buffer, 0, buffer.Length);
+                            stream.Write(buffer, 0, offset);
                         }
                     }
                 }
             }
-            Console.WriteLine(string.Format("Finished writing data. Total size: {0} KiB", eof / 1024));
+            Console.WriteLine(string.Format("Finished writing data. Total size: {0}", UserFriendlyFileSize(eof)));
             return 0;
         }
 
+        static Dictionary<string, long> GetSubEntries(string source)
+        {
+            Dictionary<string, long> fsentries = new Dictionary<string, long>();
+            try
+            {
+                using (Stream src = File.OpenRead(source))
+                {
+                    byte[] buffer = new byte[64];
+                    int offset = 0;
+
+                    while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        byte[] cache = buffer;
+                        string filename = "";
+
+                        foreach (byte b in cache[..60])
+                        {
+                            if (b == 0x00)
+                            {
+                                continue;
+                            }
+                            filename += Encoding.ASCII.GetString(new[] { b });
+                        }
+                        byte[] bytes = cache[60..];
+                        long byteoffset = (long)(BitConverter.ToInt32(bytes, 0));
+                        if (filename == "*End Of Mem Data")
+                        {
+                            break;
+                        }
+
+                        fsentries[filename] = byteoffset;
+
+                    }
+                }
+            } catch { }
+            return fsentries;
+        }
+
+        static Dictionary<string, long> GetFsEntries(string source)
+        {
+            Dictionary<string, long> fsentries = new Dictionary<string, long>();
+            Dictionary<string, long> folders = new Dictionary<string, long>();
+            using (Stream src = File.OpenRead(source))
+            {
+                byte[] buffer = new byte[64];
+                string filename = "";
+                int offset = 0;
+                long loc = 0;
+                long end_of_toc = 9999;
+                bool intoc = true;
+                List<byte> pointer = new List<byte>();
+                bool insub = false;
+                string folder = "";
+                long folder_loc = 0;
+                while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    byte[] cache = buffer;
+                    if (intoc)
+                    {
+                        filename = "";
+                        if (loc == end_of_toc)
+                        {
+                            intoc = false;
+                            continue;
+                        }
+                        pointer.Clear();
+                        foreach (byte b in cache[..60])
+                        {
+                            if (b == 0x00)
+                            {
+                                continue;
+                            }
+                            filename += Encoding.ASCII.GetString(new[] { b });
+                        }
+                        byte[] bytes = cache[60..];
+                        long byteoffset = (long)(BitConverter.ToInt32(bytes, 0)) * 2048;
+                        if (filename == "*Top Of CD Data")
+                        {
+                            end_of_toc = byteoffset;
+                            continue;
+                        }
+                        if (filename == "*End Of CD Data")
+                        {
+                            intoc = false;
+                        }
+
+                        if (filename.EndsWith("\\"))
+                        {
+                            fsentries[filename + "A"] = byteoffset;
+                        }
+                        else
+                        {
+                            fsentries[filename] = byteoffset;
+                        }
+                    }
+                    loc += 64;
+                }
+            }
+            return fsentries;
+        }
         static int ListBin(string source)
         {
             if (!File.Exists(source))
@@ -577,6 +677,94 @@ namespace FlipnicBinExtractor
             }
             return 0;
         }
+
+        static int ExtractFolder(string source, string destination)
+        {
+            Console.WriteLine(string.Format("Extracting from subfolder at {0}\\", new DirectoryInfo(source).Name));
+
+            Console.WriteLine("Interpreting subfolder TOC data...");
+            Dictionary<string, long> fs_entries = GetSubEntries(destination + "\\A");
+
+            string write_to = "";
+            long loc = -1;
+            using (Stream src = File.OpenRead(source))
+            {
+                byte[] buffer = new byte[1];
+                int offset = 0;
+                bool dnb = false;
+                long finish = -1;
+                while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    byte[] entry = buffer;
+                    if (dnb)
+                    {
+                        if (loc < finish - 1)
+                        {
+                            using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
+                            {
+                                stream.Write(entry, 0, entry.Length);
+                            }
+                        } else
+                        {
+                            dnb = false;
+                            foreach (KeyValuePair<string, long> fsentry in fs_entries)
+                            {
+                                if (fsentry.Value == loc + 1)
+                                {
+                                    dnb = true;
+                                    write_to = fsentry.Key;
+                                    long minimum = new FileInfo(source).Length;
+                                    foreach (KeyValuePair<string, long> kvp in fs_entries)
+                                    {
+                                        if ((kvp.Value > fsentry.Value) && (kvp.Value < minimum))
+                                        {
+                                            minimum = kvp.Value - 1;
+                                        }
+                                    }
+                                    finish = minimum;
+                                    Console.WriteLine("Writing {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
+                                }
+                            }
+                            
+                        }
+                        if (loc < finish - 2048)
+                        {
+                            buffer = new byte[2048];
+                        } else
+                        {
+                            buffer = new byte[1];
+                        }
+                        loc += buffer.Length;
+                        continue;
+                    }
+                    foreach (KeyValuePair<string, long> fsentry in fs_entries)
+                    {
+                        if (fsentry.Value == loc + 1)
+                        {
+                            dnb = true;
+                            write_to = fsentry.Key;
+                            long minimum = new FileInfo(source).Length;
+                            foreach (KeyValuePair<string, long> kvp in fs_entries)
+                            {
+                                if ((kvp.Value > fsentry.Value) && (kvp.Value < minimum))
+                                {
+                                    minimum = kvp.Value;
+                                }
+                            }
+                            finish = minimum - 1;
+                            Console.WriteLine("Extracting {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
+                            using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
+                            {
+                                stream.Write(entry, 0, entry.Length);
+                            }
+                        }
+                    }
+                    loc+=buffer.Length;
+                }
+            }
+            return 0;
+        }
+
         static int ExtractBin(string source, string destination)
         {
             if (Directory.Exists(destination))
@@ -598,39 +786,68 @@ namespace FlipnicBinExtractor
                 }
             }
             Console.WriteLine("Preparing...");
-            Dictionary<string, long> fs_entries = new Dictionary<string, long>();
-            Dictionary<string, long> subfolders = new Dictionary<string, long>();
             Console.WriteLine("Interpreting TOC data...");
-            bool read_toc = true;
+            Dictionary<string, long> fs_entries = GetFsEntries(source);
             string write_to = "";
-            bool subdirectory = false;
-            bool scan_mem_toc = false;
-            long folder = 0;
-            long end_folder = 0;
-            string prefix = "";
             long loc = 0;
             using (Stream src = File.OpenRead(source))
             {
-                byte[] buffer = new byte[64];
+                byte[] buffer = new byte[2048];
                 int offset = 0;
                 long eof = 0;
-                long finish = 0;
+                ulong finish = 0;
                 bool dnb = false;
                 byte[] memory = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
-
-
+                List<string> afiles = new List<string>();
+                string lastfile = "";
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     byte[] entry = buffer;
-                    if (loc >= finish)
+                    if (!dnb)
                     {
-                        dnb = false;
+                        if (lastfile.EndsWith("\\A"))
+                        {
+                            fs_entries.Remove(lastfile);
+                            ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
+                            File.Delete(destination + "\\" + lastfile);
+                            lastfile = "";
+                        }
+                        foreach (KeyValuePair<string, long> kvp in fs_entries)
+                        {
+                            if ((kvp.Value == loc) && (!kvp.Key.EndsWith("\\")))
+                            {
+                                ulong min = (ulong)new FileInfo(source).Length;
+                                foreach (KeyValuePair<string, long> kvp2 in fs_entries)
+                                {
+                                    if ((kvp2.Value > kvp.Value) && ((ulong)kvp2.Value < min))
+                                    {
+                                        min = (ulong)kvp2.Value;
+                                    }
+                                }
+                                if (!Directory.Exists(new FileInfo(destination + "\\" + kvp.Key).DirectoryName))
+                                {
+                                    Console.WriteLine(string.Format("Creating folder: {0}", new FileInfo(destination + "\\" + kvp.Key).DirectoryName));
+                                    Directory.CreateDirectory(new FileInfo(destination + "\\" + kvp.Key).DirectoryName);
+                                }
+                                finish = min;
+                                lastfile = write_to;
+                                if (!kvp.Key.EndsWith("\\A"))
+                                {
+                                    afiles.Add(kvp.Key);
+                                    Console.WriteLine(string.Format("Extracting {0} ({1})", kvp.Key, UserFriendlyFileSize((long)finish - loc)));
+                                }
+                                else
+                                {
+                                    Console.WriteLine(string.Format("Extracting {0} ({1})", kvp.Key[0..^1], UserFriendlyFileSize((long)finish - loc)));
+                                }
+                                write_to = kvp.Key;
+                                dnb = true;
+                            }
+                        }
                     }
-                    if (loc == end_folder)
+                    lastfile = write_to;
+                    if ((dnb) && ((ulong)loc >= finish))
                     {
-                        subdirectory = false;
-                        folder = 0;
-                        end_folder = 0;
                         dnb = false;
                     }
                     if (dnb)
@@ -640,212 +857,15 @@ namespace FlipnicBinExtractor
                             stream.Write(entry, 0, entry.Length);
                         }
                     }
-                    if (read_toc)
-                    {
-                        string filename = "";
-                        long pointer = 0;
-                        for (int i = 0; i < entry.Length; i++)
-                        {
-                            if (i < 60)
-                            {
-                                if (entry[i] == 0)
-                                {
-                                    continue;
-                                }
-                                else
-                                {
-                                    filename = filename + Encoding.ASCII.GetString(new[] { entry[i] });
-                                }
-                            }
-                            else
-                            {
-                                ushort bit = entry[i];
-                                // convert to hex and back to int, because it's mathematically much easier
-                                switch (i)
-                                {
-                                    case 60:
-                                        pointer += (long)bit;
-                                        break;
-                                    case 61:
-                                        pointer += long.Parse(bit.ToString("X") + "00", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                    case 62:
-                                        pointer += long.Parse(bit.ToString("X") + "0000", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                    case 63:
-                                        pointer += long.Parse(bit.ToString("X") + "000000", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                }
-                            }
-                        }
-                        pointer *= (long)2048;
-                        if (filename == "*End Of CD Data")
-                        {
-                            eof = pointer;
-                            Console.WriteLine("Finished reading main TOC data!");
-                            Console.WriteLine("Creating directories...");
-                            Directory.CreateDirectory(destination);
-                            foreach (KeyValuePair<string, long> kvp in subfolders)
-                            {
-                                Directory.CreateDirectory(destination + "\\" + kvp.Key);
-                            }
-                            read_toc = false;
-                            continue;
-                        }
-                        else if (!filename.EndsWith("\\"))
-                        {
-                            Console.WriteLine(string.Format("File: {0} at {1}", filename, pointer));
-                            fs_entries[filename] = pointer;
-                        }
-                        else
-                        {
-                            Console.WriteLine(string.Format("Subdirectory: {0} at {1}", filename, pointer));
-                            subfolders[filename] = pointer;
-                        }
-                        if (fs_entries.Count == 1)
-                        {
-                            if (filename == "*Top Of CD Data")
-                            {
-                                Console.WriteLine("TOC identified!");
-                            }
-                        }
-                    }
-                    else if (scan_mem_toc)
-                    {
-                        string filename = "";
-                        long pointer = 0;
-                        for (int i = 0; i < entry.Length; i++)
-                        {
-                            if (i < 60)
-                            {
-                                if (entry[i] != 0)
-                                {
-                                    filename += Encoding.ASCII.GetString(new[] { entry[i] });
-                                }
-                            }
-                            else
-                            {
-                                ushort bit = entry[i];
-                                // convert to hex and back to int, because it's mathematically much easier
-                                switch (i)
-                                {
-                                    case 60:
-                                        pointer += (long)bit;
-                                        break;
-                                    case 61:
-                                        pointer += long.Parse(bit.ToString("X") + "00", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                    case 62:
-                                        pointer += long.Parse(bit.ToString("X") + "0000", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                    case 63:
-                                        pointer += long.Parse(bit.ToString("X") + "000000", System.Globalization.NumberStyles.HexNumber);
-                                        break;
-                                }
-                            }
-                        }
-                        pointer = folder + pointer - 64;
-                        if (filename == "*End Of Mem Data")
-                        {
-                            end_folder = pointer;
-                            Console.WriteLine(string.Format("End of subdirectory at {0}", end_folder));
-                            scan_mem_toc = false;
-                            dnb = false;
-                        } else
-                        {
-                            Console.WriteLine(string.Format("{0}\\{1} at {2}", prefix, filename, pointer));
-                            fs_entries[(prefix + "\\" + filename).Replace("\\\\", "\\")] = pointer;
-                        }
-                    }
-                    else
-                    {
-                        if (!dnb)
-                        {
-                            bool nextisfinish = false;
-                            foreach (KeyValuePair<string, long> kvp in fs_entries)
-                            {
-                                if (kvp.Key == "*Top Of CD Data")
-                                {
-                                    continue;
-                                }
-                                else
-                                {
-                                    if (nextisfinish)
-                                    {
-                                        finish = kvp.Value - 1;
-                                        foreach (KeyValuePair<string, long> subfldr in subfolders)
-                                        {
-                                            if ((subfldr.Value < finish) && (subfldr.Value > loc))
-                                            {
-                                                finish = subfldr.Value - 1;
-                                                break;
-                                            }
-                                        }
-                                        foreach (KeyValuePair<string, long> kvp2 in fs_entries)
-                                        {
-                                            if ((kvp2.Value < finish) && (kvp2.Value > loc))
-                                            {
-                                                finish = kvp2.Value - 1;
-                                                break;
-                                            }
-                                        }
-                                        double sizeinkb = Math.Round((double)(finish - loc) / 1024.0, 2);
-                                        if (sizeinkb < 0)
-                                        {
-                                            sizeinkb = Math.Round((double)(eof - loc) / 1024.0, 2);
-                                            finish = eof;
-                                        }
-                                        Console.WriteLine(string.Format("Extracting {0} ({1} KiB)", write_to, sizeinkb));
-                                        nextisfinish = false;
-                                        dnb = true;
-                                        if (File.Exists(destination + "\\" + write_to))
-                                        {
-                                            int i = 1;
-                                            string copy = destination + "\\" + write_to + " (" + i.ToString() + ")";
-                                            while (File.Exists(copy))
-                                            {
-                                                i++; copy = destination + "\\" + write_to + " (" + i.ToString() + ")";
-                                            }
-                                            File.Move(destination + "\\" + write_to, destination + "\\" + write_to + " (" + i.ToString() + ")");
-                                        }
 
-                                        using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Create))
-                                        {
-                                            stream.Write(memory, 0, memory.Length);
-                                        }
-                                        if (memory != entry)
-                                        {
-                                            using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
-                                            {
-                                                stream.Write(entry, 0, entry.Length);
-                                            }
-                                        }
-                                        break;
-                                    }
-                                    if (loc == kvp.Value)
-                                    {
-                                        write_to = kvp.Key;
-                                        nextisfinish = true;
-                                    }
-                                }
-                            }
-                            foreach (KeyValuePair<string, long> kvp in subfolders)
-                            {
-                                if (loc == kvp.Value)
-                                {
-                                    write_to = kvp.Key;
-                                    subdirectory = true;
-                                    scan_mem_toc = true;
-                                    prefix = kvp.Key;
-                                    folder = kvp.Value;
-                                    Console.WriteLine(string.Format("Subdirectory: {0}", kvp.Key));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    loc += 64;
-                    memory = entry;
+                    loc += 2048;
+                }
+                if (lastfile.EndsWith("\\A"))
+                {
+                    fs_entries.Remove(lastfile);
+                    ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
+                    File.Delete(destination + "\\" + lastfile);
+                    lastfile = "";
                 }
             }
             
