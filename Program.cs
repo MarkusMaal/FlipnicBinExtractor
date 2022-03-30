@@ -846,7 +846,7 @@ namespace FlipnicBinExtractor
                         }
                     }
                     lastfile = write_to;
-                    if ((dnb) && ((ulong)loc >= finish))
+                    if ((dnb) && ((ulong)loc >= finish - 2048))
                     {
                         dnb = false;
                     }

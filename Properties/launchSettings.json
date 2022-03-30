@@ -2,7 +2,7 @@
   "profiles": {
     "FlipnicBinExtractor": {
       "commandName": "Project",
-      "commandLineArgs": "/e \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\ORIGINAL\\FONT.BIN\" \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\FONT_2\""
+      "commandLineArgs": "/e \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\extracted\\STR.BIN\" \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\STR_2\""
     }
   }
 }
