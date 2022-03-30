@@ -16,13 +16,13 @@ This tool allows you to extract data from .BIN files using a properietary format
 * To extract data, use the following syntax: `FlipnicBinExtractor /e [source] [destination]`
 * To list directory, use the following syntax: `FlipnicBinExtractor /l [source]`
 * To data to a subfolder, use the following syntax: `FlipnicBinExtractor /f [source] [destination]`
-* Full BIN repacking is not available in this version (but is still in development)
+* For full repacking, use the following syntax: `FlipnicBinExtractor /c [source] [destination]`
 ## Examples
 * `FlipnicBinExtractor /e RES.BIN Extracted`
 * `FlipnicBinExtractor /e FONT.BIN FONT`
 * `FlipnicBinExtractor /l RES.BIN`
 * `FlipnicBinExtractor /f BOSS1 BOSS1\A`
-* `FlipnicBinExtractor /c FONT FONT.BIN` (not available in current version)
+* `FlipnicBinExtractor /c FONT FONT.BIN`
 ## VGMToolBox settings
 These settings can be used in VGMToolBox (VGMToolbox > Misc. Tools > Extraction Tools > Generic > Virtual File System Extractor) for extracting BIN files (note that this will only work if the BIN file has no subfolders, you will need to use my tool for more advanced extraction purposes):
 * Header Size or File Count > Header Ends at Offset `<offset of the last "*End Of CD Data" file>`
