@@ -2,7 +2,8 @@
   "profiles": {
     "FlipnicBinExtractor": {
       "commandName": "Project",
-      "commandLineArgs": "/c \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\STR\" \"D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC\\STR.BIN\""
+      "commandLineArgs": "/e STR.BIN STR_2",
+      "workingDirectory": "D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC"
     }
   }
 }

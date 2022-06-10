@@ -2,6 +2,8 @@
 using System.IO;
 using System.Text;
 using System.Collections.Generic;
+using System.Linq;
+
 namespace FlipnicBinExtractor
 {
     class Program
@@ -52,7 +54,7 @@ namespace FlipnicBinExtractor
                 Console.WriteLine(string.Format("No command specified. To see all available commands, type \"{0} /?\".", me));
                 return 4;
             }
-            else if ((args[0].ToLower() != "/l") && (args.Length < 3))
+            else if ((args[0].ToLower() != "/l") && (args[0].ToLower() != "/le") && (args.Length < 3))
             {
                 Console.WriteLine("Not enough arguments specified!");
                 return 5;
@@ -516,38 +518,39 @@ namespace FlipnicBinExtractor
         static Dictionary<string, long> GetSubEntries(string source)
         {
             Dictionary<string, long> fsentries = new Dictionary<string, long>();
-            try
+            using (Stream src = File.OpenRead(source))
             {
-                using (Stream src = File.OpenRead(source))
+                byte[] buffer = new byte[64];
+                int offset = 0;
+
+                while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    byte[] buffer = new byte[64];
-                    int offset = 0;
+                    byte[] cache = buffer;
+                    string filename = "";
 
-                    while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                    foreach (byte b in cache[..60])
                     {
-                        byte[] cache = buffer;
-                        string filename = "";
-
-                        foreach (byte b in cache[..60])
+                        if (b == 0x00)
                         {
-                            if (b == 0x00)
-                            {
-                                continue;
-                            }
-                            filename += Encoding.ASCII.GetString(new[] { b });
+                            continue;
                         }
-                        byte[] bytes = cache[60..];
-                        long byteoffset = (long)(BitConverter.ToInt32(bytes, 0));
-                        if (filename == "*End Of Mem Data")
-                        {
-                            break;
-                        }
-
-                        fsentries[filename] = byteoffset;
-
+                        filename += Encoding.ASCII.GetString(new[] { b });
                     }
+                    if (filename == "*End Of Mem Data")
+                    {
+                        break;
+                    }
+                    byte[] bytes = cache[60..];
+                    long byteoffset = (long)(BitConverter.ToInt32(bytes, 0));
+                    string original_filename = filename;
+                    Random r = new Random();
+                    while (fsentries.ContainsKey(filename))
+                    {
+                        filename = original_filename + r.Next(1, 9999).ToString();
+                    }
+                    fsentries[filename] = byteoffset;
                 }
-            } catch { }
+            }
             return fsentries;
         }
 
@@ -566,7 +569,8 @@ namespace FlipnicBinExtractor
                 List<byte> pointer = new List<byte>();
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    byte[] cache = buffer;
+                    byte[] cache = new byte[buffer.Length];
+                    Buffer.BlockCopy(buffer, 0, cache, 0, buffer.Length);
                     if (intoc)
                     {
                         filename = "";
@@ -620,6 +624,9 @@ namespace FlipnicBinExtractor
             if (savefile)
             {
                 text_output = source[..^3] + "TXT";
+                if (File.Exists(text_output)) { File.Delete(text_output); }
+                string filekey = "Key:                  File types:\r\nS = Subfolder entry   BD  - Sample data          TM2 - Texture file    MID - MIDI sequence (music)      XML - Menu Layout (XML format)   SVAG - Sony ADPCM Compressed wave files\r\nR = Root file entry   HD  - Sample header data   ICO - Icon file       FPD - Flipnic Path Data          MLB - Menu Layout (Binary)       TXT  - Charset group data (Text format)\r\nF = Folder entry      MSG - In-game messages     COL - Color data      FPC - Camera Position Data       CSV - Menu Layout (CSV format)   FTL  - Charset group data (Binary)\r\nA - Alias             SST - Stage or save data   LP4 - 3D Model Data   LAY - 3D Model Layout on Stage   PSS - PlayStation Stream (FMV)   LIT  - Lighting data???\r\n\r\n";
+                File.AppendAllText(text_output, filekey);
             }
             Dictionary<string, long> folders = new Dictionary<string, long>();
             using (Stream src = File.OpenRead(source))
@@ -670,9 +677,20 @@ namespace FlipnicBinExtractor
                         {
                             folders[filename] = byteoffset;
                         }
-                        string echo = string.Format("\\{0} (offset: 0x{1})", filename, byteoffset.ToString("X")));
+                        string echo = string.Format("\\{0} (offset: 0x{1})", filename, byteoffset.ToString("X"));
                         if (!savefile) { Console.WriteLine(echo); }
-                        else { File.AppendAllText(text_output, echo); }
+                        else {
+                            string marker = "A ---> ";
+                            if (filename.EndsWith("\\"))
+                            {
+                                marker = "F ---> ";
+                            }
+                            else if (!filename.Contains("\\"))
+                            {
+                                marker = "R ---> ";
+                            }
+                            File.AppendAllText(text_output, marker +  echo + "\r\n");
+                        }
                     } else if (insub)
                     {
                         int i = cache.Length - 5;
@@ -689,7 +707,7 @@ namespace FlipnicBinExtractor
                         {
                             string echo = string.Format("\\{0}{1} (offset: 0x{2})", folder, filename, byteoffset.ToString("X"));
                             if (!savefile) { Console.WriteLine(echo); }
-                            else { File.AppendAllText(text_output, echo); }
+                            else { File.AppendAllText(text_output, "S ---> " + echo + "\r\n"); }
                         }
                     }
                     else
@@ -708,9 +726,22 @@ namespace FlipnicBinExtractor
                                 byte[] soff = cache[60..];
                                 filename = Encoding.ASCII.GetString(name);
                                 long byteoffset = (long)(BitConverter.ToUInt32(soff, 0)) + kvp.Value;
+                                string marker = "A ---> ";
+                                if (intoc == false)
+                                {
+                                    marker = "S ---> ";
+                                }
+                                else if (filename.EndsWith("\\"))
+                                {
+                                    marker = "F ---> ";
+                                }
+                                else if (!filename.Contains("\\"))
+                                {
+                                    marker = "R ---> ";
+                                }
                                 string echo = string.Format("\\{0}{1} (offset: 0x{2})", kvp.Key, filename, byteoffset.ToString("X"));
                                 if (!savefile) { Console.WriteLine(echo); }
-                                else { File.AppendAllText(text_output, echo); }
+                                else { File.AppendAllText(text_output, marker + echo + "\r\n"); }
                             }
                         }
                     }
@@ -729,90 +760,51 @@ namespace FlipnicBinExtractor
             Dictionary<string, long> fs_entries = GetSubEntries(destination + "\\A");
 
             string write_to = "";
-            long loc = -1;
             using (Stream src = File.OpenRead(source))
             {
                 byte[] buffer = new byte[1];
                 int offset = 0;
                 bool dnb = false;
                 long finish = -1;
+                byte[] c2;
+                List<byte> content = new List<byte>();
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    byte[] entry = buffer;
-                    if (dnb)
+                    content.AddRange(buffer);
+                }
+                c2 = content.ToArray<byte>();
+                List<long> fs_values = new List<long>();
+                List<string> fs_keys = new List<string>();
+                foreach (KeyValuePair<string, long> kvp in fs_entries)
+                {
+                    fs_values.Add(kvp.Value);
+                    fs_keys.Add(kvp.Key);
+                }
+                for (int i = 0; i < fs_entries.Count; i++)
+                {
+                    long start = fs_values[i];
+                    long end = content.Count;
+                    if (i < fs_values.Count - 1)
                     {
-                        if (loc < finish - 1)
-                        {
-                            using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
-                            {
-                                stream.Write(entry, 0, entry.Length);
-                            }
-                        } else
-                        {
-                            dnb = false;
-
-                            // check to make sure we're not missing the last byte
-                            if (new FileInfo(destination + "\\" + write_to).Length % 16 != 0)
-                            {
-                                using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
-                                {
-                                    byte[] nll = new byte[1];
-                                    stream.Write(nll, 0, 1);
-                                }
-                            }
-                            foreach (KeyValuePair<string, long> fsentry in fs_entries)
-                            {
-                                if (fsentry.Value == loc + 1)
-                                {
-                                    dnb = true;
-                                    write_to = fsentry.Key;
-                                    long minimum = new FileInfo(source).Length;
-                                    foreach (KeyValuePair<string, long> kvp in fs_entries)
-                                    {
-                                        if ((kvp.Value > fsentry.Value) && (kvp.Value < minimum))
-                                        {
-                                            minimum = kvp.Value - 1;
-                                        }
-                                    }
-                                    finish = minimum;
-                                    Console.WriteLine("Extracting {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
-                                }
-                            }
-                            
-                        }
-                        if (loc < finish - 2048)
-                        {
-                            buffer = new byte[2048];
-                        } else
-                        {
-                            buffer = new byte[1];
-                        }
-                        loc += buffer.Length;
-                        continue;
+                        end = fs_values[i + 1];
                     }
-                    foreach (KeyValuePair<string, long> fsentry in fs_entries)
+                    try
                     {
-                        if (fsentry.Value == loc + 1)
+                        byte[] entry = new byte[end - start];
+                        Console.WriteLine("Extracting {0} ({1})", fs_keys[i], UserFriendlyFileSize(end - start));
+                        try
                         {
-                            dnb = true;
-                            write_to = fsentry.Key;
-                            long minimum = new FileInfo(source).Length;
-                            foreach (KeyValuePair<string, long> kvp in fs_entries)
-                            {
-                                if ((kvp.Value > fsentry.Value) && (kvp.Value < minimum))
-                                {
-                                    minimum = kvp.Value;
-                                }
-                            }
-                            finish = minimum - 1;
-                            Console.WriteLine("Extracting {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
-                            using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
-                            {
-                                stream.Write(entry, 0, entry.Length);
-                            }
+                            Buffer.BlockCopy(c2, Convert.ToInt32(start), entry, 0, (int)(end - start));
+                            File.WriteAllBytes(destination + "\\" + fs_keys[i], entry);
                         }
+                        catch
+                        {
+                            Console.WriteLine("Failed to extract this file");
+                        }
+                    } catch
+                    {
+                        Console.WriteLine("Integer overflow!");
                     }
-                    loc+=buffer.Length;
                 }
             }
             return 0;
@@ -842,7 +834,6 @@ namespace FlipnicBinExtractor
             Console.WriteLine("Interpreting TOC data...");
             Dictionary<string, long> fs_entries = GetFsEntries(source);
             string write_to = "";
-            long loc = 0;
             using (Stream src = File.OpenRead(source))
             {
                 byte[] buffer = new byte[2048];
@@ -852,9 +843,16 @@ namespace FlipnicBinExtractor
                 byte[] memory = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
                 List<string> afiles = new List<string>();
                 string lastfile = "";
+                List<byte> content = new List<byte>();
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    byte[] entry = buffer;
+                    content.AddRange(buffer);
+                }
+                byte[] c2 = content.ToArray<byte>();
+                for (long loc = 0; loc < content.Count; loc+=2048)
+                {
+                    byte[] entry = new byte[2048];
+                    Buffer.BlockCopy(c2, Convert.ToInt32(loc), entry, 0, 2048);
                     if (!dnb)
                     {
                         if (lastfile.EndsWith("\\A") && (extract_subfolder))
@@ -925,8 +923,6 @@ namespace FlipnicBinExtractor
                             stream.Write(entry, 0, entry.Length);
                         }
                     }
-
-                    loc += 2048;
                 }
                 if (lastfile.EndsWith("\\A"))
                 {
