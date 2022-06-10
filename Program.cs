@@ -544,9 +544,11 @@ namespace FlipnicBinExtractor
                     long byteoffset = (long)(BitConverter.ToInt32(bytes, 0));
                     string original_filename = filename;
                     Random r = new Random();
+                    int i = 1;
                     while (fsentries.ContainsKey(filename))
                     {
-                        filename = original_filename + r.Next(1, 9999).ToString();
+                        filename = original_filename + "_" + i.ToString();
+                        i++;
                     }
                     fsentries[filename] = byteoffset;
                 }
@@ -758,16 +760,13 @@ namespace FlipnicBinExtractor
 
             Console.WriteLine("Interpreting subfolder TOC data...");
             Dictionary<string, long> fs_entries = GetSubEntries(destination + "\\A");
-
-            string write_to = "";
             using (Stream src = File.OpenRead(source))
             {
                 byte[] buffer = new byte[1];
                 int offset = 0;
-                bool dnb = false;
-                long finish = -1;
                 byte[] c2;
                 List<byte> content = new List<byte>();
+                Console.WriteLine("Loading subfolder to memory...");
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     content.AddRange(buffer);
@@ -797,15 +796,18 @@ namespace FlipnicBinExtractor
                             Buffer.BlockCopy(c2, Convert.ToInt32(start), entry, 0, (int)(end - start));
                             File.WriteAllBytes(destination + "\\" + fs_keys[i], entry);
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            Console.WriteLine("Failed to extract this file");
+                            Console.WriteLine(ex.Message);
                         }
-                    } catch
+                    } catch (Exception ex)
                     {
-                        Console.WriteLine("Integer overflow!");
+                        Console.WriteLine(ex.Message);
                     }
                 }
+                Console.WriteLine("Disposing variables...");
+                c2 = null;
+                content = null;
             }
             return 0;
         }
@@ -844,6 +846,7 @@ namespace FlipnicBinExtractor
                 List<string> afiles = new List<string>();
                 string lastfile = "";
                 List<byte> content = new List<byte>();
+                Console.WriteLine("Loading file to memory...");
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     content.AddRange(buffer);
@@ -896,26 +899,6 @@ namespace FlipnicBinExtractor
                         }
                     }
                     lastfile = write_to;
-                    if ((dnb) && ((ulong)loc >= finish - 2048))
-                    {
-                        dnb = false;
-                        // check to make sure we're not missing the last byte
-                        try
-                        {
-                            if (new FileInfo(destination + "\\" + write_to).Length % 16 != 0)
-                            {
-                                using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
-                                {
-                                    byte[] nll = new byte[1];
-                                    stream.Write(nll, 0, 1);
-                                }
-                            }
-                        }
-                        catch
-                        {
-
-                        }
-                    }
                     if (dnb)
                     {
                         using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
@@ -923,13 +906,16 @@ namespace FlipnicBinExtractor
                             stream.Write(entry, 0, entry.Length);
                         }
                     }
+                    if ((dnb) && ((ulong)loc >= finish - 2048))
+                    {
+                        dnb = false;
+                    }
                 }
                 if (lastfile.EndsWith("\\A"))
                 {
                     fs_entries.Remove(lastfile);
                     ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
                     File.Delete(destination + "\\" + lastfile);
-                    lastfile = "";
                 }
             }
             
