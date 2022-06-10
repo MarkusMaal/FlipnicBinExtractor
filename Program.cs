@@ -19,13 +19,20 @@ namespace FlipnicBinExtractor
             {
                 string help = "Help" +
                     "\n" +
-                    string.Format("\nUsage: {0} [/e /c /f] [source] [destination]", me) +
+                    string.Format("\nUsage: {0} [/e /c /f] [source] [destination] [directory tree file]", me) +
                     "\n" +
                     "\n/e          - Extract data from BIN file" +
+                    "\n/ef         - Extract data from BIN file. Skip unpacking subfolders (subfolders are saved in original" +
+                    "\n              format as [folder location]\\A)." +
                     "\n/l          - Display directory tree without extracting data" +
-                    "\n/c          - Create BIN file using files in a folder. Any subfolders containing files will be aliased and the A file will be interpreted as a subfolder in TOC." +
-                    "\n/f          - Create a subdirectory file, which you can use for repacking. Note that this is significantly slower, because each file is 1 byte addressed." +
-                    "\nsource      - The source file. If extracting, this must be a .BIN file. If you're repacking, make sure this points to a folder." +
+                    "\n/le         - Save directory tree to a file" +
+                    "\n/c          - Create BIN file using files in a folder. Any subfolders containing files will be aliased" +
+                    "\n              and the A file will be interpreted as a subfolder in TOC. OPTIONAL: File order can be" +
+                    "\n              specified by directory tree file. This can help avoid crashes in certain cases. " +
+                    "\n/f          - Create a subdirectory file, which you can use for repacking. Note that this is significantly slower," +
+                    "\n              because each file is 1 byte addressed." +
+                    "\nsource      - The source file. If extracting, this must be a .BIN file. If you're repacking, make sure this points" +
+                    "\n              to a folder." +
                     "\ndestination - The destination folder (when extracting) or file (when repacking)" +
                     "\n" +
                     "\nExamples:" +
@@ -33,6 +40,8 @@ namespace FlipnicBinExtractor
                     string.Format("\n{0} /e STR.BIN STR", me) +
                     string.Format("\n{0} /f STR STR\\A", me) +
                     string.Format("\n{0} /l RES.BIN", me) +
+                    string.Format("\n{0} /le RES.BIN RES.TXT", me) +
+                    string.Format("\n{0} /c RES RES.BIN RES.TXT", me) +
                     string.Format("\n{0} /c TUTO TUTO.BIN", me) + "\n";
                 Console.Write(help);
                 return 0;
@@ -60,6 +69,19 @@ namespace FlipnicBinExtractor
                 {
                     case "/e":
                         switch (ExtractBin(args[1], args[2]))
+                        {
+                            case 0:
+                                Console.WriteLine("Command completed successfully.");
+                                return 0;
+                            case 1:
+                                Console.WriteLine("Cannot continue. Must overwrite directory to extract!");
+                                return 1;
+                            default:
+                                Console.WriteLine("Unknown error has occoured.");
+                                return 999;
+                        }
+                    case "/ef":
+                        switch (ExtractBin(args[1], args[2], false))
                         {
                             case 0:
                                 Console.WriteLine("Command completed successfully.");
@@ -529,9 +551,6 @@ namespace FlipnicBinExtractor
                 long end_of_toc = 9999;
                 bool intoc = true;
                 List<byte> pointer = new List<byte>();
-                bool insub = false;
-                string folder = "";
-                long folder_loc = 0;
                 while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     byte[] cache = buffer;
@@ -707,6 +726,16 @@ namespace FlipnicBinExtractor
                         } else
                         {
                             dnb = false;
+
+                            // check to make sure we're not missing the last byte
+                            if (new FileInfo(destination + "\\" + write_to).Length % 16 != 0)
+                            {
+                                using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
+                                {
+                                    byte[] nll = new byte[1];
+                                    stream.Write(nll, 0, 1);
+                                }
+                            }
                             foreach (KeyValuePair<string, long> fsentry in fs_entries)
                             {
                                 if (fsentry.Value == loc + 1)
@@ -722,7 +751,7 @@ namespace FlipnicBinExtractor
                                         }
                                     }
                                     finish = minimum;
-                                    Console.WriteLine("Writing {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
+                                    Console.WriteLine("Extracting {0} ({1})", fsentry.Key, UserFriendlyFileSize(finish - loc));
                                 }
                             }
                             
@@ -765,7 +794,7 @@ namespace FlipnicBinExtractor
             return 0;
         }
 
-        static int ExtractBin(string source, string destination)
+        static int ExtractBin(string source, string destination, bool extract_subfolder = true)
         {
             if (Directory.Exists(destination))
             {
@@ -794,7 +823,6 @@ namespace FlipnicBinExtractor
             {
                 byte[] buffer = new byte[2048];
                 int offset = 0;
-                long eof = 0;
                 ulong finish = 0;
                 bool dnb = false;
                 byte[] memory = { 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 };
@@ -805,7 +833,7 @@ namespace FlipnicBinExtractor
                     byte[] entry = buffer;
                     if (!dnb)
                     {
-                        if (lastfile.EndsWith("\\A"))
+                        if (lastfile.EndsWith("\\A") && (extract_subfolder))
                         {
                             fs_entries.Remove(lastfile);
                             ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
@@ -849,6 +877,22 @@ namespace FlipnicBinExtractor
                     if ((dnb) && ((ulong)loc >= finish - 2048))
                     {
                         dnb = false;
+                        // check to make sure we're not missing the last byte
+                        try
+                        {
+                            if (new FileInfo(destination + "\\" + write_to).Length % 16 != 0)
+                            {
+                                using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
+                                {
+                                    byte[] nll = new byte[1];
+                                    stream.Write(nll, 0, 1);
+                                }
+                            }
+                        }
+                        catch
+                        {
+
+                        }
                     }
                     if (dnb)
                     {
