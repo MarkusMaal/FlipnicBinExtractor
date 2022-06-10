@@ -119,6 +119,19 @@ namespace FlipnicBinExtractor
                                 Console.WriteLine("Unknown error has occoured.");
                                 return 999;
                         }
+                    case "/le":
+                        switch (ListBin(args[1], true))
+                        {
+                            case 0:
+                                Console.WriteLine("Command completed successfully.");
+                                return 0;
+                            case 1:
+                                Console.WriteLine("Specified file does not exist.");
+                                return 1;
+                            default:
+                                Console.WriteLine("Unknown error has occoured.");
+                                return 999;
+                        }
                     case "/f":
                         switch (CreateFolder(args[1], args[2]))
                         {
@@ -597,11 +610,16 @@ namespace FlipnicBinExtractor
             }
             return fsentries;
         }
-        static int ListBin(string source)
+        static int ListBin(string source, bool savefile = false)
         {
+            string text_output = "";
             if (!File.Exists(source))
             {
                 return 1;
+            }
+            if (savefile)
+            {
+                text_output = source[..^3] + "TXT";
             }
             Dictionary<string, long> folders = new Dictionary<string, long>();
             using (Stream src = File.OpenRead(source))
@@ -652,7 +670,9 @@ namespace FlipnicBinExtractor
                         {
                             folders[filename] = byteoffset;
                         }
-                        Console.WriteLine(string.Format("\\{0} (offset: 0x{1})", filename, byteoffset.ToString("X")));
+                        string echo = string.Format("\\{0} (offset: 0x{1})", filename, byteoffset.ToString("X")));
+                        if (!savefile) { Console.WriteLine(echo); }
+                        else { File.AppendAllText(text_output, echo); }
                     } else if (insub)
                     {
                         int i = cache.Length - 5;
@@ -667,7 +687,9 @@ namespace FlipnicBinExtractor
                             insub = false;
                         } else
                         {
-                            Console.WriteLine(string.Format("\\{0}{1} (offset: 0x{2})", folder, filename, byteoffset.ToString("X")));
+                            string echo = string.Format("\\{0}{1} (offset: 0x{2})", folder, filename, byteoffset.ToString("X"));
+                            if (!savefile) { Console.WriteLine(echo); }
+                            else { File.AppendAllText(text_output, echo); }
                         }
                     }
                     else
@@ -686,7 +708,9 @@ namespace FlipnicBinExtractor
                                 byte[] soff = cache[60..];
                                 filename = Encoding.ASCII.GetString(name);
                                 long byteoffset = (long)(BitConverter.ToUInt32(soff, 0)) + kvp.Value;
-                                Console.WriteLine(string.Format("\\{0}{1} (offset: 0x{2})", kvp.Key, filename, byteoffset.ToString("X")));
+                                string echo = string.Format("\\{0}{1} (offset: 0x{2})", kvp.Key, filename, byteoffset.ToString("X"));
+                                if (!savefile) { Console.WriteLine(echo); }
+                                else { File.AppendAllText(text_output, echo); }
                             }
                         }
                     }
