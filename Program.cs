@@ -26,6 +26,7 @@ namespace FlipnicBinExtractor
                     "\n/e          - Extract data from BIN file" +
                     "\n/ef         - Extract data from BIN file. Skip unpacking subfolders (subfolders are saved in original" +
                     "\n              format as [folder location]\\A)." +
+                    "\n/es         - Extract data from a subfolder (A file)." +
                     "\n/l          - Display directory tree without extracting data" +
                     "\n/le         - Save directory tree to a file" +
                     "\n/c          - Create BIN file using files in a folder. Any subfolders containing files will be aliased" +
@@ -54,12 +55,12 @@ namespace FlipnicBinExtractor
                 Console.WriteLine(string.Format("No command specified. To see all available commands, type \"{0} /?\".", me));
                 return 4;
             }
-            else if ((args[0].ToLower() != "/l") && (args[0].ToLower() != "/le") && (args.Length < 3))
+            else if (((args[0].ToLower() != "/l") && (args[0].ToLower() != "/le") && (args.Length < 3)))
             {
                 Console.WriteLine("Not enough arguments specified!");
                 return 5;
             }
-            else if (args.Length > 3)
+            else if (((args.Length > 3) && (args[0].ToLower() != "/c")) || ((args.Length > 4) && (args[0].ToLower() == "/c")))
             {
                 Console.WriteLine("Too many arguments specified!");
                 return 6;
@@ -104,6 +105,13 @@ namespace FlipnicBinExtractor
                             case 1:
                                 Console.WriteLine("Cannot continue. Must overwrite existing BIN file to repack!");
                                 return 1;
+                            // Only applicable when the TOC file is used. In other situations, these errors shouldn't occour
+                            case 30:
+                                Console.WriteLine("Folder container file referenced missing for repack!");
+                                return 30;
+                            case 31:
+                                Console.WriteLine("File references missing for repack!");
+                                return 30;
                             default:
                                 Console.WriteLine("Unknown error has occoured.");
                                 return 999;
@@ -180,7 +188,6 @@ namespace FlipnicBinExtractor
                 }
             }
             Console.WriteLine("Analyzing files...");
-
             // To generate folder packs, use the /f switch (see CreateFolder function)
             Dictionary<string, long> folderpacks = new Dictionary<string, long>();
 
@@ -223,7 +230,8 @@ namespace FlipnicBinExtractor
                         folderpacks[di.Name.ToUpper() + "\\"] = SetSizeOnBin(fi.Length, clst);
                         eotoc += 64;
                         eof += SetSizeOnBin(fi.Length, clst);
-                    } else
+                    }
+                    else
                     {
                         aliases[di.Name.ToUpper() + "\\" + fi.Name.ToUpper()] = SetSizeOnBin(fi.Length, clst);
                         eotoc += 64;
@@ -321,7 +329,7 @@ namespace FlipnicBinExtractor
                 {
                     bytes.Add(0x00);
                 }
-                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(eof / 2048.0, 0)));;
+                bytes.AddRange(BitConverter.GetBytes((uint)RoundUp(eof / 2048.0, 0))); ;
                 buffer = bytes.ToArray();
                 stream.Write(buffer, 0, buffer.Length);
             }
@@ -384,11 +392,16 @@ namespace FlipnicBinExtractor
 
         }
 
+        // RoundUp is a general function
         static double RoundUp(double number, int decimalPlaces)
         {
             return Math.Ceiling(number * Math.Pow(10, decimalPlaces)) / Math.Pow(10, decimalPlaces);
         }
 
+        // AppendData is a general function
+        // Appends certain amount of bytes to a file
+        // The using statement is used so that the file is closed properly after the
+        // write
         static void AppendData(byte[] bytes, string destination)
         {
             using (var stream = new FileStream(destination, FileMode.Append))
@@ -397,6 +410,9 @@ namespace FlipnicBinExtractor
             }
         }
 
+        // Convert bytes to a user friendly display, which can be displayed on the console log
+        // The maximum size is in gibibytes, since that's the biggest unit used in the context
+        // of PS2 game DVDs
         static string UserFriendlyFileSize(long bytes)
         {
             if (bytes >= Math.Pow(2, 30)) { return string.Format("{0} GiB", Math.Round(bytes / Math.Pow(2, 30), 2)); }
@@ -627,7 +643,7 @@ namespace FlipnicBinExtractor
             {
                 text_output = source[..^3] + "TXT";
                 if (File.Exists(text_output)) { File.Delete(text_output); }
-                string filekey = "Key:                  File types:\r\nS = Subfolder entry   BD  - Sample data          TM2 - Texture file    MID - MIDI sequence (music)      XML - Menu Layout (XML format)   SVAG - Sony ADPCM Compressed wave files\r\nR = Root file entry   HD  - Sample header data   ICO - Icon file       FPD - Flipnic Path Data          MLB - Menu Layout (Binary)       TXT  - Charset group data (Text format)\r\nF = Folder entry      MSG - In-game messages     COL - Color data      FPC - Camera Position Data       CSV - Menu Layout (CSV format)   FTL  - Charset group data (Binary)\r\nA - Alias             SST - Stage or save data   LP4 - 3D Model Data   LAY - 3D Model Layout on Stage   PSS - PlayStation Stream (FMV)   LIT  - Lighting data???\r\n\r\n";
+                string filekey = "Key:                  File types:\r\nS = Subfolder entry   BD  - Sample data          TM2 - Texture file    MID - MIDI sequence (music)      XML - Menu Layout (XML format)   SVAG - Sony ADPCM Compressed wave files\r\nR = Root file entry   HD  - Sample header data   ICO - Icon file       FPD - Flipnic Path Data          MLB - Menu Layout (Binary)       TXT  - Charset group data (Text format)\r\nF = Folder entry      MSG - In-game messages     COL - Color data      FPC - Camera Position Data       CSV - Menu Layout (CSV format)   FTL  - Charset group data (Binary)\r\nA - Alias             SST - Stage or save data   LP4 - 3D Model Data   LAY - 3D Model Layout on Stage   PSS - PlayStation Stream (FMV)   LIT  - Lighting data???\r\nSCC - Dummy file\r\n";
                 File.AppendAllText(text_output, filekey);
             }
             Dictionary<string, long> folders = new Dictionary<string, long>();

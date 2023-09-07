@@ -2,7 +2,7 @@
   "profiles": {
     "FlipnicBinExtractor": {
       "commandName": "Project",
-      "commandLineArgs": "/e \"RES – koopia.BIN\" RES_2",
+      "commandLineArgs": "/e \"STR.BIN\" STR_2",
       "workingDirectory": "D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC"
     }
   }
