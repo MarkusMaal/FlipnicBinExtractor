@@ -2,8 +2,8 @@
   "profiles": {
     "FlipnicBinExtractor": {
       "commandName": "Project",
-      "commandLineArgs": "/e \"STR.BIN\" STR_2",
-      "workingDirectory": "D:\\Romid\\PS2\\DVD\\SLES_520.65.FLIPNIC"
+      "commandLineArgs": "/est STAFF_ROLL1.PSS",
+      "workingDirectory": "C:\\mas\\fbe\\STR"
     }
   }
 }

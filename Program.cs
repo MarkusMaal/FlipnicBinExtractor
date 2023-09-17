@@ -34,6 +34,8 @@ namespace FlipnicBinExtractor
                     "\n              specified by directory tree file. This can help avoid crashes in certain cases. " +
                     "\n/f          - Create a subdirectory file, which you can use for repacking. Note that this is significantly slower," +
                     "\n              because each file is 1 byte addressed." +
+                    "\n/lst        - Lists all streams within a .PSS file" +
+                    "\n/est        - Separates all streams from a .PSS file" +
                     "\nsource      - The source file. If extracting, this must be a .BIN file. If you're repacking, make sure this points" +
                     "\n              to a folder." +
                     "\ndestination - The destination folder (when extracting) or file (when repacking)" +
@@ -44,6 +46,8 @@ namespace FlipnicBinExtractor
                     string.Format("\n{0} /f STR STR\\A", me) +
                     string.Format("\n{0} /l RES.BIN", me) +
                     string.Format("\n{0} /le RES.BIN RES.TXT", me) +
+                    string.Format("\n{0} /lst SILVER_DROP.PSS", me) +
+                    string.Format("\n{0} /est SHUKYAKUDEMO.PSS", me) +
                     string.Format("\n{0} /c RES RES.BIN RES.TXT", me) +
                     string.Format("\n{0} /c TUTO TUTO.BIN", me) + "\n";
                 Console.Write(help);
@@ -55,7 +59,7 @@ namespace FlipnicBinExtractor
                 Console.WriteLine(string.Format("No command specified. To see all available commands, type \"{0} /?\".", me));
                 return 4;
             }
-            else if (((args[0].ToLower() != "/l") && (args[0].ToLower() != "/le") && (args.Length < 3)))
+            else if (((args[0].ToLower() != "/l") && (args[0].ToLower() != "/le") && (args[0].ToLower() != "/lst") && (args[0].ToLower() != "/est") && (args.Length < 3)))
             {
                 Console.WriteLine("Not enough arguments specified!");
                 return 5;
@@ -70,6 +74,27 @@ namespace FlipnicBinExtractor
                 // Parse first argument
                 switch (args[0].ToLower())
                 {
+                    case "/lst":
+                        switch (ListPss(args[1]))
+                        {
+                            case 0:
+                                Console.WriteLine("Command completed successfully.");
+                                return 0;
+                            default:
+                                Console.WriteLine("Unknown error has occoured.");
+                                return 999;
+                        }
+                    case "/est":
+                        switch (ListPss(args[1], true))
+                        {
+                            case 0:
+                                Console.WriteLine("Command completed successfully.");
+                                return 0;
+                            default:
+                                Console.WriteLine("Unknown error has occoured.");
+                                return 999;
+                        }
+                        return 0;
                     case "/e":
                         switch (ExtractBin(args[1], args[2]))
                         {
@@ -632,6 +657,174 @@ namespace FlipnicBinExtractor
             }
             return fsentries;
         }
+
+        static void CopyStream(Stream destination, Stream source)
+        {
+            int count;
+            byte[] buffer = new byte[1024];
+            while ((count = source.Read(buffer, 0, buffer.Length)) > 0)
+                destination.Write(buffer, 0, count);
+        }
+
+
+        private static void CutFile(string sourceFilePath, string destinationFilePath, long startPosition, long endPosition)
+        {
+            Console.WriteLine("Extracting " + (endPosition - startPosition).ToString() + " bytes as " + new FileInfo(destinationFilePath).Name.ToString() + "...");
+            FileMode fm = FileMode.Create;
+            using (FileStream sourceStream = new FileStream(sourceFilePath, FileMode.Open))
+            {
+                using (FileStream destinationStream = new FileStream(destinationFilePath + ".TEMP", fm))
+                {
+                    byte[] buffer = new byte[1024];
+                    int bytesRead;
+                    // Set the position to the starting position
+                    sourceStream.Seek(startPosition, SeekOrigin.Begin);
+
+                    while ((bytesRead = sourceStream.Read(buffer, 0, buffer.Length)) > 0)
+                    {
+                        if (destinationStream.Position + bytesRead > endPosition - startPosition + 1)
+                        {
+                            // Ensure we don't write more bytes than needed
+                            bytesRead = (int)(endPosition - startPosition + 1 - destinationStream.Position);
+                        }
+
+                        if (bytesRead > 0)
+                        {
+                            destinationStream.Write(buffer, 0, bytesRead);
+
+                            if (destinationStream.Position >= endPosition - startPosition + 1)
+                            {
+                                // Reached the end position, exit the loop
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            FileStream fs1 = File.Open(destinationFilePath, FileMode.Append);
+            FileStream fs2 = File.Open(destinationFilePath + ".TEMP", FileMode.Open);
+            byte[] fs2Content = new byte[fs2.Length];
+            fs2.Read(fs2Content, 0, (int)fs2.Length);
+            fs1.Write(fs2Content, 0, (int)fs2.Length);
+            fs1.Close();
+            fs2.Close();
+
+            File.Delete(destinationFilePath + ".TEMP");
+        }
+
+        static int ListPss(string filename, bool extract = false)
+        {
+            Console.WriteLine("Searching for video/audio streams...");
+            IDictionary<string, long> streams = new Dictionary<string, long>();
+            List<string> extractCommands = new List<string>();
+            using (Stream src = File.OpenRead(filename))
+            {
+                byte[] buffer = new byte[16];
+
+                int offset = 0;
+                int seek = 0;
+                while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    // audio stream
+                    if ((buffer[0] == 0x49) && (buffer[1] == 0x4E) && (buffer[2] == 0x54) && (buffer[3] == 0x00))
+                    {
+                        byte[] idbytes = { buffer[4], buffer[5], buffer[6], buffer[7] };
+                        byte[] sizebytes = { buffer[8], buffer[9], buffer[10], buffer[11] };
+                        byte[] nextpointer = { buffer[12], buffer[13], buffer[14], buffer[15] };
+                        int streamID = BitConverter.ToInt32(idbytes, 0);
+                        int streamSize = BitConverter.ToInt32(sizebytes, 0);
+                        int gotoPointer = BitConverter.ToInt32(nextpointer, 0);
+                        bool exists = false;
+                        foreach (string stream in streams.Keys)
+                        {
+                            if (stream == "Audio " + streamID.ToString())
+                            {
+                                exists = true;
+                            }
+                        }
+                        if (!exists)
+                        {
+                            streams.Add(new KeyValuePair<string, long>("Audio " + streamID.ToString(), streamSize));
+                        } else
+                        {
+                            streams["Audio " + streamID.ToString()] += streamSize;
+                        }
+                        if (extract)
+                        {
+                            long startRange = seek + 0x10;
+                            long endRange = startRange + streamSize - 1;
+                            extractCommands.Add(filename + "," + filename + ".INT" + streamID.ToString() + "," + startRange.ToString() + "," + endRange.ToString());
+                        }
+                        //Console.WriteLine("Audio " + streamID.ToString() + " at " + seek.ToString("X"));
+                        seek += gotoPointer + 0x10;
+                        src.Seek(seek, 0);
+                        continue;
+                    }
+                    // video stream
+                    else if ((buffer[0] == 0x49) && (buffer[1] == 0x50) && (buffer[2] == 0x55) && (buffer[3] == 0x00))
+                    {
+                        byte[] idbytes = { buffer[4], buffer[5], buffer[6], buffer[7] };
+                        byte[] sizebytes = { buffer[8], buffer[9], buffer[10], buffer[11] };
+                        byte[] nextpointer = { buffer[12], buffer[13], buffer[14], buffer[15] };
+                        int streamID = BitConverter.ToInt32(idbytes, 0);
+                        int streamSize = BitConverter.ToInt32(sizebytes, 0);
+                        int gotoPointer = BitConverter.ToInt32(nextpointer, 0);
+                        bool exists = false;
+                        foreach (string stream in streams.Keys)
+                        {
+                            if (stream == "Video " + streamID.ToString())
+                            {
+                                exists = true;
+                            }
+                        }
+                        if (!exists)
+                        {
+                            streams.Add(new KeyValuePair<string, long>("Video " + streamID.ToString(), streamSize));
+                        }
+                        else
+                        {
+                            streams["Video " + streamID.ToString()] += streamSize;
+                        }
+                        if (extract)
+                        {
+                            long startRange = seek + 0x10;
+                            long endRange = startRange + streamSize - 1;
+                            extractCommands.Add(filename + "," + filename + ".IPU" + streamID.ToString() + "," + startRange.ToString() + "," + endRange.ToString());
+                        }
+                        //Console.WriteLine("Video " + streamID.ToString() + " at " + seek.ToString("X"));
+                        seek += gotoPointer + 0x10;
+                        src.Seek(seek, 0);
+                        continue;
+                    }
+                    // end of file
+                    else if ((buffer[0] == 0x45) && (buffer[1] == 0x4E) && (buffer[2] == 0x44) && (buffer[3] == 0x00))
+                    {
+                        break;
+                    }
+                    seek += 16;
+                }
+            }
+            if (extract)
+            {
+                Console.WriteLine("Starting extraction process...");
+                foreach (string cmd in extractCommands)
+                {
+                    string[] args = cmd.Split(',');
+                    CutFile(args[0], args[1], Convert.ToInt64(args[2]), Convert.ToInt64(args[3]));
+                }
+                Console.WriteLine("Finished extraction process!");
+            }
+            else
+            {
+                Console.WriteLine("The following streams have been found:");
+                foreach (KeyValuePair<string, long> kvp in streams)
+                {
+                    Console.WriteLine(kvp.Key + ": " + kvp.Value + " bytes");
+                }
+            }
+            return 0;
+        }
+
         static int ListBin(string source, bool savefile = false)
         {
             string text_output = "";
