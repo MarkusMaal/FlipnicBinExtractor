@@ -376,7 +376,7 @@ namespace FlipnicBinExtractor
             foreach (KeyValuePair<string, long> kvp in folderpacks)
             {
                 Console.WriteLine(string.Format("\tWriting folder {0} ({1})", kvp.Key, UserFriendlyFileSize(kvp.Value)));
-                using (Stream src = File.OpenRead(source + "\\" + kvp.Key + "\\A"))
+                using (Stream src = File.OpenRead(source + "/" + kvp.Key + "/A"))
                 {
                     byte[] buffer = new byte[2048];
                     while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
@@ -389,7 +389,7 @@ namespace FlipnicBinExtractor
                     if (skvp.Key.StartsWith(kvp.Key))
                     {
                         Console.WriteLine(string.Format("\tWriting alias {0} ({1})", skvp.Key, UserFriendlyFileSize(skvp.Value)));
-                        using (Stream src = File.OpenRead(source + "\\" + skvp.Key))
+                        using (Stream src = File.OpenRead(source + "/" + skvp.Key))
                         {
                             byte[] buffer = new byte[2048];
                             while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
@@ -403,7 +403,7 @@ namespace FlipnicBinExtractor
             foreach (KeyValuePair<string, long> kvp in files)
             {
                 Console.WriteLine(string.Format("\tWriting file {0} ({1})", kvp.Key, UserFriendlyFileSize(kvp.Value)));
-                using (Stream src = File.OpenRead(source + "\\" + kvp.Key))
+                using (Stream src = File.OpenRead(source + "/" + kvp.Key))
                 {
                     byte[] buffer = new byte[2048];
                     while ((offset = src.Read(buffer, 0, buffer.Length)) > 0)
@@ -484,7 +484,7 @@ namespace FlipnicBinExtractor
             Dictionary<string, long> fs_entries = new Dictionary<string, long>();
             foreach (FileInfo fi in new DirectoryInfo(source).EnumerateFiles())
             {
-                if (fi.Name != destination.Split('\\')[^1])
+                if (fi.Name != destination.Split('/')[^1])
                 {
                     fs_entries[fi.Name] = fi.Length;
                     toc_length += 64;
@@ -539,7 +539,7 @@ namespace FlipnicBinExtractor
             foreach (KeyValuePair<string, long> file in fs_entries)
             {
                 Console.WriteLine(string.Format("\tWriting {0}... ({1})", file.Key, UserFriendlyFileSize(eof)));
-                using (Stream src = File.OpenRead(source + "\\" + file.Key))
+                using (Stream src = File.OpenRead(source + "/" + file.Key))
                 {
                     byte[] buffer = new byte[2048];
                     int offset = 0;
@@ -559,7 +559,7 @@ namespace FlipnicBinExtractor
         static Dictionary<string, long> GetSubEntries(string source)
         {
             Dictionary<string, long> fsentries = new Dictionary<string, long>();
-            using (Stream src = File.OpenRead(source))
+            using (Stream src = File.OpenRead(source.Replace("\\", "/")))
             {
                 byte[] buffer = new byte[64];
                 int offset = 0;
@@ -1003,7 +1003,7 @@ namespace FlipnicBinExtractor
                         try
                         {
                             Buffer.BlockCopy(c2, Convert.ToInt32(start), entry, 0, (int)(end - start));
-                            File.WriteAllBytes(destination + "\\" + fs_keys[i], entry);
+                            File.WriteAllBytes(destination + "/" + fs_keys[i], entry);
                         }
                         catch (Exception ex)
                         {
@@ -1067,11 +1067,11 @@ namespace FlipnicBinExtractor
                     Buffer.BlockCopy(c2, Convert.ToInt32(loc), entry, 0, 2048);
                     if (!dnb)
                     {
-                        if (lastfile.EndsWith("\\A") && (extract_subfolder))
+                        if (lastfile.EndsWith("/A") && (extract_subfolder))
                         {
                             fs_entries.Remove(lastfile);
-                            ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
-                            File.Delete(destination + "\\" + lastfile);
+                            ExtractFolder(destination + "/" + lastfile, new FileInfo(destination + "/" + lastfile).DirectoryName);
+                            File.Delete(destination + "/" + lastfile);
                             lastfile = "";
                         }
                         foreach (KeyValuePair<string, long> kvp in fs_entries)
@@ -1086,10 +1086,10 @@ namespace FlipnicBinExtractor
                                         min = (ulong)kvp2.Value;
                                     }
                                 }
-                                if (!Directory.Exists(new FileInfo(destination + "\\" + kvp.Key).DirectoryName))
+                                if (!Directory.Exists(new FileInfo(destination + "/" + kvp.Key).DirectoryName))
                                 {
-                                    Console.WriteLine(string.Format("Creating folder: {0}", new FileInfo(destination + "\\" + kvp.Key).DirectoryName));
-                                    Directory.CreateDirectory(new FileInfo(destination + "\\" + kvp.Key).DirectoryName);
+                                    Console.WriteLine(string.Format("Creating folder: {0}", new FileInfo(destination + "/" + kvp.Key).DirectoryName));
+                                    Directory.CreateDirectory(new FileInfo(destination + "/" + kvp.Key).DirectoryName);
                                 }
                                 finish = min;
                                 lastfile = write_to;
@@ -1102,7 +1102,8 @@ namespace FlipnicBinExtractor
                                 {
                                     Console.WriteLine(string.Format("Extracting {0} ({1})", kvp.Key[0..^1], UserFriendlyFileSize((long)finish - loc)));
                                 }
-                                write_to = kvp.Key;
+                                write_to = kvp.Key.Replace("\\", "/");
+                                CheckMissingDirs(kvp.Key, destination);
                                 dnb = true;
                             }
                         }
@@ -1110,7 +1111,7 @@ namespace FlipnicBinExtractor
                     lastfile = write_to;
                     if (dnb)
                     {
-                        using (var stream = new FileStream(destination + "\\" + write_to, FileMode.Append))
+                        using (var stream = new FileStream(destination + "/" + write_to, FileMode.Append))
                         {
                             stream.Write(entry, 0, entry.Length);
                         }
@@ -1123,13 +1124,19 @@ namespace FlipnicBinExtractor
                 if (lastfile.EndsWith("\\A"))
                 {
                     fs_entries.Remove(lastfile);
-                    ExtractFolder(destination + "\\" + lastfile, new FileInfo(destination + "\\" + lastfile).DirectoryName);
-                    File.Delete(destination + "\\" + lastfile);
+                    ExtractFolder(destination + "/" + lastfile.Replace("\\", "/"), new FileInfo(destination + "/" + lastfile.Replace("\\", "/")).DirectoryName);
+                    File.Delete(destination + "/" + lastfile.Replace("\\", "/"));
                 }
             }
             
             return 0;
 
+        }
+
+        private static void CheckMissingDirs(string dirname, string target)
+        {
+            if (!dirname.Contains("\\")) return;
+            Directory.CreateDirectory(target + "/" + dirname.Split("\\")[0]);
         }
     }
 }
